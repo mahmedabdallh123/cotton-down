@@ -16,23 +16,27 @@ from github import Github, GithubException
 APP_CONFIG = {
     "APP_TITLE": "HR System - متابعة الغيابات والبدلات",
     "APP_ICON": "👥",
-    "REPO_NAME": "mahmedabdallh123/cotton-down",
+    "REPO_NAME": "mahmedabdallh123/stations",
     "BRANCH": "main",
-    "FILE_PATH": "l9.xlsx",          # تم تغيير اسم الملف
-    "LOCAL_FILE": "l9.xlsx",
+    "FILE_PATH": "hr_data.xlsx",
+    "LOCAL_FILE": "hr_data.xlsx",
     "MAX_ACTIVE_USERS": 5,
     "SESSION_DURATION_MINUTES": 60,
     "IMAGES_FOLDER": "hr_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    # أسماء الأوراق الجديدة
     "EMPLOYEES_SHEET": "الموظفين",
     "ABSENCES_SHEET": "الغيابات",
     "ALLOWANCES_SHEET": "البدلات",
     "ATTENDANCE_SHEET": "الحضور",
-    # أعمدة كل ورقة
-    "EMPLOYEES_COLUMNS": ["الموظف", "القسم", "الوظيفة", "تاريخ التوظيف", "رقم الهاتف", "ملاحظات", "رابط الصورة"],
-    "ABSENCES_COLUMNS": ["الموظف", "القسم", "التاريخ", "نوع الغياب", "عدد الأيام", "سبب الغياب", "موثق", "ملاحظات", "رابط الصورة"],
+    "EMPLOYEES_COLUMNS": [
+        "الموظف", "القسم", "الوظيفة", "الرقم الكودي", "خط السير", "الوردية",
+        "تاريخ التوظيف", "رقم الهاتف", "الرصيد السنوي", "ملاحظات", "رابط الصورة"
+    ],
+    "ABSENCES_COLUMNS": [
+        "الموظف", "القسم", "التاريخ", "نوع الغياب", "عدد الأيام",
+        "سبب الغياب", "موثق", "ملاحظات", "رابط الصورة"
+    ],
     "ALLOWANCES_COLUMNS": ["الموظف", "القسم", "التاريخ", "نوع البدل", "المبلغ", "ملاحظات", "رابط الصورة"],
     "ATTENDANCE_COLUMNS": ["الموظف", "القسم", "التاريخ", "وقت الحضور", "وقت الانصراف", "عدد ساعات العمل", "ملاحظات", "رابط الصورة"],
 }
@@ -40,20 +44,13 @@ APP_CONFIG = {
 # ------------------------------- إعداد الصفحة -------------------------------
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
-# ------------------------------- استيرادات إضافية مع معالجة الأخطاء -------------------------------
+# ------------------------------- استيرادات إضافية -------------------------------
 try:
     import plotly.express as px
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
-        plt.rcParams['font.family'] = 'Arial'
-        MATPLOTLIB_AVAILABLE = True
-    except ImportError:
-        MATPLOTLIB_AVAILABLE = False
 
 # ------------------------------- ثوابت إضافية -------------------------------
 USERS_FILE = "users.json"
@@ -61,12 +58,10 @@ STATE_FILE = "state.json"
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
-EQUIPMENT_CONFIG_FILE = "hr_config.json"      # يستخدم الآن لتخزين إعدادات HR بسيطة إن لزم
 SUPPORT_CONFIG_FILE = "support_config.json"
-
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/cotton-down/refs/heads/main/users.json"
-GITHUB_REPO_USERS = "mahmedabdallh123/cotton-down"
+GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/stations/refs/heads/main/users.json"
+GITHUB_REPO_USERS = "mahmedabdallh123/stations"
 GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
@@ -102,16 +97,6 @@ def upload_image_to_github(image_file, entity_type, entity_id, custom_filename=N
         st.error(f"❌ خطأ في معالجة الصورة: {e}")
         return None
 
-def get_image_component(image_url, caption=""):
-    if not image_url or not isinstance(image_url, str):
-        return None
-    try:
-        return st.image(image_url, caption=caption, use_container_width=True)
-    except:
-        st.warning(f"⚠️ تعذر عرض الصورة: {image_url}")
-        return None
-
-# ------------------------------- دوال إعدادات الدعم الفني -------------------------------
 def load_support_config():
     default_config = {"image_url": "", "youtube_link": ""}
     if GITHUB_AVAILABLE:
@@ -149,7 +134,7 @@ def save_support_config(config):
     with open(SUPPORT_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
-# ------------------------------- دوال سجل النشاطات -------------------------------
+# ------------------------------- سجل النشاطات -------------------------------
 def log_activity(action_type, details, username=None):
     if username is None:
         username = st.session_state.get("username", "غير معروف")
@@ -195,9 +180,8 @@ def load_activity_log():
             return json.load(f)
     return []
 
-# ------------------------------- دوال تحميل وحفظ البيانات الرئيسية -------------------------------
+# ------------------------------- دوال تحميل وحفظ البيانات -------------------------------
 def create_empty_hr_sheets():
-    """إنشاء أوراق فارغة لنظام HR"""
     sheets = {}
     sheets[APP_CONFIG["EMPLOYEES_SHEET"]] = pd.DataFrame(columns=APP_CONFIG["EMPLOYEES_COLUMNS"])
     sheets[APP_CONFIG["ABSENCES_SHEET"]] = pd.DataFrame(columns=APP_CONFIG["ABSENCES_COLUMNS"])
@@ -207,9 +191,7 @@ def create_empty_hr_sheets():
 
 @st.cache_data(show_spinner=False)
 def load_all_sheets():
-    """تحميل جميع الأوراق من ملف Excel"""
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
-        # إنشاء ملف جديد بالأوراق الافتراضية
         empty_sheets = create_empty_hr_sheets()
         with pd.ExcelWriter(APP_CONFIG["LOCAL_FILE"], engine="openpyxl") as writer:
             for name, df in empty_sheets.items():
@@ -217,21 +199,14 @@ def load_all_sheets():
         return empty_sheets
     try:
         sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None)
-        # التأكد من وجود الأوراق المطلوبة، وإنشاء ما ينقص
         required = [APP_CONFIG["EMPLOYEES_SHEET"], APP_CONFIG["ABSENCES_SHEET"],
                     APP_CONFIG["ALLOWANCES_SHEET"], APP_CONFIG["ATTENDANCE_SHEET"]]
         for sheet in required:
             if sheet not in sheets:
-                sheets[sheet] = pd.DataFrame(columns=APP_CONFIG[f"{sheet.split('_')[0].upper()}_COLUMNS"] if False else [])
-                # إصلاح سريع: استخدام القاموس
-                columns_dict = {
-                    APP_CONFIG["EMPLOYEES_SHEET"]: APP_CONFIG["EMPLOYEES_COLUMNS"],
-                    APP_CONFIG["ABSENCES_SHEET"]: APP_CONFIG["ABSENCES_COLUMNS"],
-                    APP_CONFIG["ALLOWANCES_SHEET"]: APP_CONFIG["ALLOWANCES_COLUMNS"],
-                    APP_CONFIG["ATTENDANCE_SHEET"]: APP_CONFIG["ATTENDANCE_COLUMNS"]
-                }
-                sheets[sheet] = pd.DataFrame(columns=columns_dict[sheet])
-        # تنظيف الأعمدة
+                sheets[sheet] = pd.DataFrame(columns=APP_CONFIG["EMPLOYEES_COLUMNS"] if sheet == APP_CONFIG["EMPLOYEES_SHEET"] else
+                                            APP_CONFIG["ABSENCES_COLUMNS"] if sheet == APP_CONFIG["ABSENCES_SHEET"] else
+                                            APP_CONFIG["ALLOWANCES_COLUMNS"] if sheet == APP_CONFIG["ALLOWANCES_SHEET"] else
+                                            APP_CONFIG["ATTENDANCE_COLUMNS"])
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
             df = df.fillna('')
@@ -243,7 +218,6 @@ def load_all_sheets():
 
 @st.cache_data(show_spinner=False)
 def load_sheets_for_edit():
-    """نفس التحميل ولكن بدون معالجة إضافية للتعديل"""
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return create_empty_hr_sheets()
     try:
@@ -252,7 +226,10 @@ def load_sheets_for_edit():
                     APP_CONFIG["ALLOWANCES_SHEET"], APP_CONFIG["ATTENDANCE_SHEET"]]
         for sheet in required:
             if sheet not in sheets:
-                sheets[sheet] = pd.DataFrame(columns=APP_CONFIG[f"{sheet.split('_')[0].upper()}_COLUMNS"] if False else [])
+                sheets[sheet] = pd.DataFrame(columns=APP_CONFIG["EMPLOYEES_COLUMNS"] if sheet == APP_CONFIG["EMPLOYEES_SHEET"] else
+                                            APP_CONFIG["ABSENCES_COLUMNS"] if sheet == APP_CONFIG["ABSENCES_SHEET"] else
+                                            APP_CONFIG["ALLOWANCES_COLUMNS"] if sheet == APP_CONFIG["ALLOWANCES_SHEET"] else
+                                            APP_CONFIG["ATTENDANCE_COLUMNS"])
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
             df = df.fillna('')
@@ -276,7 +253,7 @@ def push_to_github():
     try:
         token = st.secrets.get("github", {}).get("token", None)
         if not token:
-            st.error("❌ لم يتم العثور على GitHub token في secrets")
+            st.error("❌ لم يتم العثور على GitHub token")
             return False
         g = Github(token)
         repo = g.get_repo(APP_CONFIG["REPO_NAME"])
@@ -314,7 +291,7 @@ def save_and_push_to_github(sheets_dict, operation_name):
         st.error("❌ فشل الحفظ المحلي")
         return False
 
-# ------------------------------- دوال الصلاحيات والمستخدمين (بدون تغيير كبير) -------------------------------
+# ------------------------------- دوال الصلاحيات والمستخدمين -------------------------------
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
@@ -459,12 +436,21 @@ def get_departments(sheets_edit):
         return []
     return emp_df["القسم"].dropna().unique().tolist()
 
-def add_employee(sheets_edit, name, department, job_title, hire_date, phone, notes, image_url):
+def add_employee(sheets_edit, name, department, job_title, code, route, shift,
+                 hire_date, phone, annual_leave, notes, image_url):
     df = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
     new_row = pd.DataFrame([{
-        "الموظف": name, "القسم": department, "الوظيفة": job_title,
+        "الموظف": name,
+        "القسم": department,
+        "الوظيفة": job_title,
+        "الرقم الكودي": code,
+        "خط السير": route,
+        "الوردية": shift,
         "تاريخ التوظيف": hire_date.strftime("%Y-%m-%d") if isinstance(hire_date, datetime) else str(hire_date),
-        "رقم الهاتف": phone, "ملاحظات": notes, "رابط الصورة": image_url or ""
+        "رقم الهاتف": phone,
+        "الرصيد السنوي": annual_leave,
+        "ملاحظات": notes,
+        "رابط الصورة": image_url or ""
     }])
     sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]] = pd.concat([df, new_row], ignore_index=True)
     return sheets_edit
@@ -472,9 +458,15 @@ def add_employee(sheets_edit, name, department, job_title, hire_date, phone, not
 def add_absence_record(sheets_edit, employee, department, date, absence_type, days, reason, documented, notes, image_url):
     df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
     new_row = pd.DataFrame([{
-        "الموظف": employee, "القسم": department, "التاريخ": date.strftime("%Y-%m-%d") if isinstance(date, datetime) else str(date),
-        "نوع الغياب": absence_type, "عدد الأيام": days, "سبب الغياب": reason,
-        "موثق": "نعم" if documented else "لا", "ملاحظات": notes, "رابط الصورة": image_url or ""
+        "الموظف": employee,
+        "القسم": department,
+        "التاريخ": date.strftime("%Y-%m-%d") if isinstance(date, datetime) else str(date),
+        "نوع الغياب": absence_type,
+        "عدد الأيام": days,
+        "سبب الغياب": reason,
+        "موثق": "نعم" if documented else "لا",
+        "ملاحظات": notes,
+        "رابط الصورة": image_url or ""
     }])
     sheets_edit[APP_CONFIG["ABSENCES_SHEET"]] = pd.concat([df, new_row], ignore_index=True)
     return sheets_edit
@@ -482,8 +474,13 @@ def add_absence_record(sheets_edit, employee, department, date, absence_type, da
 def add_allowance_record(sheets_edit, employee, department, date, allowance_type, amount, notes, image_url):
     df = sheets_edit[APP_CONFIG["ALLOWANCES_SHEET"]]
     new_row = pd.DataFrame([{
-        "الموظف": employee, "القسم": department, "التاريخ": date.strftime("%Y-%m-%d") if isinstance(date, datetime) else str(date),
-        "نوع البدل": allowance_type, "المبلغ": amount, "ملاحظات": notes, "رابط الصورة": image_url or ""
+        "الموظف": employee,
+        "القسم": department,
+        "التاريخ": date.strftime("%Y-%m-%d") if isinstance(date, datetime) else str(date),
+        "نوع البدل": allowance_type,
+        "المبلغ": amount,
+        "ملاحظات": notes,
+        "رابط الصورة": image_url or ""
     }])
     sheets_edit[APP_CONFIG["ALLOWANCES_SHEET"]] = pd.concat([df, new_row], ignore_index=True)
     return sheets_edit
@@ -491,9 +488,14 @@ def add_allowance_record(sheets_edit, employee, department, date, allowance_type
 def add_attendance_record(sheets_edit, employee, department, date, time_in, time_out, hours_worked, notes, image_url):
     df = sheets_edit[APP_CONFIG["ATTENDANCE_SHEET"]]
     new_row = pd.DataFrame([{
-        "الموظف": employee, "القسم": department, "التاريخ": date.strftime("%Y-%m-%d") if isinstance(date, datetime) else str(date),
-        "وقت الحضور": time_in, "وقت الانصراف": time_out, "عدد ساعات العمل": hours_worked,
-        "ملاحظات": notes, "رابط الصورة": image_url or ""
+        "الموظف": employee,
+        "القسم": department,
+        "التاريخ": date.strftime("%Y-%m-%d") if isinstance(date, datetime) else str(date),
+        "وقت الحضور": time_in,
+        "وقت الانصراف": time_out,
+        "عدد ساعات العمل": hours_worked,
+        "ملاحظات": notes,
+        "رابط الصورة": image_url or ""
     }])
     sheets_edit[APP_CONFIG["ATTENDANCE_SHEET"]] = pd.concat([df, new_row], ignore_index=True)
     return sheets_edit
@@ -505,7 +507,6 @@ def analyze_hr_data(all_sheets):
         st.warning("لا توجد بيانات للتحليل")
         return
 
-    # اختيار نوع التحليل
     analysis_type = st.selectbox("نوع التحليل", ["الغيابات", "البدلات", "الحضور والانصراف"])
 
     if analysis_type == "الغيابات":
@@ -514,15 +515,12 @@ def analyze_hr_data(all_sheets):
             st.info("لا توجد سجلات غياب")
             return
         df["عدد الأيام"] = pd.to_numeric(df["عدد الأيام"], errors='coerce').fillna(1)
-        # أكثر الموظفين غياباً
         st.subheader("🔝 أكثر الموظفين غياباً (إجمالي الأيام)")
         top_absence = df.groupby("الموظف")["عدد الأيام"].sum().sort_values(ascending=False).head(10)
         st.bar_chart(top_absence)
-        # توزيع أنواع الغياب
         st.subheader("📊 توزيع أنواع الغياب")
         type_counts = df["نوع الغياب"].value_counts()
         st.bar_chart(type_counts)
-        # تفاصيل الغيابات حسب الشهر
         st.subheader("📅 الغيابات الشهرية")
         df["التاريخ"] = pd.to_datetime(df["التاريخ"], errors='coerce')
         df["الشهر"] = df["التاريخ"].dt.to_period("M")
@@ -545,12 +543,11 @@ def analyze_hr_data(all_sheets):
         df["الشهر"] = df["التاريخ"].dt.to_period("M")
         monthly_allow = df.groupby("الشهر")["المبلغ"].sum()
         st.line_chart(monthly_allow.astype(float))
-    else:  # الحضور
+    else:
         df = all_sheets[APP_CONFIG["ATTENDANCE_SHEET"]]
         if df.empty:
             st.info("لا توجد سجلات حضور")
             return
-        # تحليل متوسط ساعات العمل
         df["عدد ساعات العمل"] = pd.to_numeric(df["عدد ساعات العمل"], errors='coerce').fillna(0)
         st.subheader("⏱️ متوسط ساعات العمل اليومية لكل موظف")
         avg_hours = df.groupby("الموظف")["عدد ساعات العمل"].mean()
@@ -572,7 +569,6 @@ def search_across_sheets_hr(all_sheets):
 
     search_type = st.selectbox("نوع السجل المراد البحث فيه:", ["الغيابات", "البدلات", "الحضور", "الموظفين"])
 
-    # إذا كان النوع موظفين، بحث بسيط
     if search_type == "الموظفين":
         df = all_sheets[APP_CONFIG["EMPLOYEES_SHEET"]]
         if df.empty:
@@ -585,7 +581,6 @@ def search_across_sheets_hr(all_sheets):
         st.dataframe(df, use_container_width=True)
         return
 
-    # اختيار الورقة المناسبة
     sheet_map = {
         "الغيابات": APP_CONFIG["ABSENCES_SHEET"],
         "البدلات": APP_CONFIG["ALLOWANCES_SHEET"],
@@ -597,7 +592,6 @@ def search_across_sheets_hr(all_sheets):
         st.info(f"لا توجد سجلات {search_type}")
         return
 
-    # فلاتر
     col1, col2 = st.columns(2)
     with col1:
         employee_filter = st.selectbox("الموظف", ["الكل"] + get_employees_list(all_sheets))
@@ -633,26 +627,8 @@ def search_across_sheets_hr(all_sheets):
 
         st.success(f"تم العثور على {len(df)} سجل")
         st.dataframe(df, use_container_width=True)
-        # زر تحميل
         excel_buffer = export_filtered_results_to_excel(df, search_type)
         st.download_button("📥 تحميل النتائج", excel_buffer, file_name=f"{search_type}_search.xlsx")
-
-# ------------------------------- دوال التصدير (تستخدم في عدة أماكن) -------------------------------
-def export_sheet_to_excel(sheets_dict, sheet_name):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df = sheets_dict[sheet_name]
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
-    output.seek(0)
-    return output
-
-def export_all_sheets_to_excel(sheets_dict):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for sheet_name, df in sheets_dict.items():
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
-    output.seek(0)
-    return output
 
 def export_filtered_results_to_excel(results_df, sheet_name):
     output = io.BytesIO()
@@ -661,7 +637,7 @@ def export_filtered_results_to_excel(results_df, sheet_name):
     output.seek(0)
     return output
 
-# ------------------------------- تبويب إدارة البيانات الرئيسي (HR) -------------------------------
+# ------------------------------- تبويب إدارة البيانات الرئيسي -------------------------------
 def manage_hr_data(sheets_edit):
     st.header("🛠 إدارة بيانات الموارد البشرية")
     if sheets_edit is None:
@@ -673,34 +649,58 @@ def manage_hr_data(sheets_edit):
 
     with tabs[0]:
         st.subheader("قائمة الموظفين")
-        emp_df = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
-        # إضافة موظف جديد
+        emp_df = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]].copy()
+        # عرض الرصيد المتبقي
+        if not emp_df.empty:
+            absences_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
+            if not absences_df.empty:
+                annual_absences = absences_df[absences_df["نوع الغياب"] == "سنوي"].copy()
+                if not annual_absences.empty:
+                    annual_absences["عدد الأيام"] = pd.to_numeric(annual_absences["عدد الأيام"], errors='coerce').fillna(0)
+                    used_days = annual_absences.groupby("الموظف")["عدد الأيام"].sum()
+                else:
+                    used_days = pd.Series(dtype=float)
+            else:
+                used_days = pd.Series(dtype=float)
+            emp_df["الرصيد المستنفد"] = emp_df["الموظف"].map(used_days).fillna(0)
+            emp_df["الرصيد المتبقي"] = pd.to_numeric(emp_df["الرصيد السنوي"], errors='coerce').fillna(0) - emp_df["الرصيد المستنفد"]
+            # عرض ملخص
+            st.dataframe(emp_df[["الموظف", "القسم", "الوظيفة", "الرصيد المتبقي", "الرصيد المستنفد"]], use_container_width=True)
+        else:
+            st.info("لا يوجد موظفون بعد")
+
         with st.expander("➕ إضافة موظف جديد"):
             with st.form("add_employee_form"):
                 c1, c2 = st.columns(2)
                 with c1:
                     name = st.text_input("اسم الموظف")
+                    code = st.text_input("الرقم الكودي")
+                    route = st.text_input("خط السير")
+                    shift = st.text_input("الوردية")
                     department = st.selectbox("القسم", get_departments(sheets_edit) + ["قسم جديد..."])
                     if department == "قسم جديد...":
                         new_dept = st.text_input("اسم القسم الجديد")
                         department = new_dept
+                with c2:
                     job = st.text_input("الوظيفة")
                     hire_date = st.date_input("تاريخ التوظيف", value=datetime.now())
-                with c2:
                     phone = st.text_input("رقم الهاتف")
+                    annual_leave = st.number_input("الرصيد السنوي (أيام)", min_value=0, value=21, step=1)
                     notes = st.text_area("ملاحظات")
                     emp_image = st.file_uploader("صورة الموظف", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
                 if st.form_submit_button("إضافة"):
-                    img_url = None
-                    if emp_image:
-                        img_url = upload_image_to_github(emp_image, "employee", str(uuid.uuid4())[:8])
-                    sheets_edit = add_employee(sheets_edit, name, department, job, hire_date, phone, notes, img_url)
-                    if save_and_push_to_github(sheets_edit, f"إضافة موظف {name}"):
-                        st.success("تمت الإضافة")
-                        st.rerun()
-        # عرض الموظفين
+                    if not name:
+                        st.error("يرجى إدخال اسم الموظف")
+                    else:
+                        img_url = None
+                        if emp_image:
+                            img_url = upload_image_to_github(emp_image, "employee", str(uuid.uuid4())[:8])
+                        sheets_edit = add_employee(sheets_edit, name, department, job, code, route, shift,
+                                                   hire_date, phone, annual_leave, notes, img_url)
+                        if save_and_push_to_github(sheets_edit, f"إضافة موظف {name}"):
+                            st.success("تمت الإضافة")
+                            st.rerun()
         if not emp_df.empty:
-            st.dataframe(emp_df, use_container_width=True)
             if st.button("🗑️ حذف موظف محدد"):
                 st.session_state["delete_emp"] = True
             if st.session_state.get("delete_emp"):
@@ -711,8 +711,6 @@ def manage_hr_data(sheets_edit):
                         st.success("تم الحذف")
                         st.session_state["delete_emp"] = False
                         st.rerun()
-        else:
-            st.info("لا يوجد موظفون بعد")
 
     with tabs[1]:
         st.subheader("تسجيل غياب")
@@ -724,20 +722,76 @@ def manage_hr_data(sheets_edit):
                 emp = st.selectbox("الموظف", employees)
                 dept = st.selectbox("القسم", get_departments(sheets_edit))
                 date = st.date_input("التاريخ", value=datetime.now())
-                absence_type = st.selectbox("نوع الغياب", ["مرضي", "عرضي", "بدون إذن", "سنوي", "أمومة", "آخر"])
+                absence_type = st.selectbox(
+                    "نوع الغياب",
+                    ["خصم أجر اليوم", "اعتذار عن تكليف إضافي", "مرضي", "سنوي", "تعويض بيوم إجازة رسمية", "غياب عادي", "آخر"]
+                )
+                if absence_type == "آخر":
+                    absence_type = st.text_input("حدد نوع الغياب")
                 days = st.number_input("عدد الأيام", min_value=0.5, step=0.5)
                 reason = st.text_area("سبب الغياب")
                 documented = st.checkbox("موثق؟")
                 notes = st.text_input("ملاحظات إضافية")
                 img = st.file_uploader("صورة (إجازة مرضية مثلاً)", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
+
+                # التحقق من الرصيد السنوي
+                abort_submit = False
+                if absence_type == "سنوي" and days > 0:
+                    emp_data = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
+                    emp_row = emp_data[emp_data["الموظف"] == emp]
+                    if not emp_row.empty:
+                        total_balance = pd.to_numeric(emp_row.iloc[0]["الرصيد السنوي"], errors='coerce') or 0
+                        abs_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
+                        if not abs_df.empty:
+                            prev_annual = abs_df[(abs_df["الموظف"] == emp) & (abs_df["نوع الغياب"] == "سنوي")]["عدد الأيام"]
+                            prev_annual = pd.to_numeric(prev_annual, errors='coerce').fillna(0).sum()
+                        else:
+                            prev_annual = 0
+                        remaining = total_balance - prev_annual
+                        if days > remaining:
+                            st.error(f"❌ الرصيد المتبقي غير كافٍ (المتبقي {remaining} يوم)")
+                            abort_submit = True
+                        else:
+                            st.info(f"الرصيد المتبقي بعد التسجيل: {remaining - days} يوم")
+
                 if st.form_submit_button("تسجيل"):
-                    img_url = None
-                    if img:
-                        img_url = upload_image_to_github(img, "absence", str(uuid.uuid4())[:8])
-                    sheets_edit = add_absence_record(sheets_edit, emp, dept, date, absence_type, days, reason, documented, notes, img_url)
-                    if save_and_push_to_github(sheets_edit, f"تسجيل غياب {emp}"):
-                        st.success("تم تسجيل الغياب")
-                        st.rerun()
+                    if abort_submit:
+                        st.stop()
+                    if not emp:
+                        st.error("يرجى اختيار الموظف")
+                    else:
+                        img_url = None
+                        if img:
+                            img_url = upload_image_to_github(img, "absence", str(uuid.uuid4())[:8])
+                        sheets_edit = add_absence_record(sheets_edit, emp, dept, date, absence_type, days, reason, documented, notes, img_url)
+                        if save_and_push_to_github(sheets_edit, f"تسجيل غياب {emp}"):
+                            st.success("تم تسجيل الغياب")
+                            # إنذار عند تجاوز ثلث الرصيد السنوي في الشهر
+                            if absence_type == "سنوي":
+                                current_month = date.month
+                                current_year = date.year
+                                abs_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
+                                # إعادة حساب أيام السنوي لهذا الشهر
+                                mask = (
+                                    (abs_df["الموظف"] == emp) &
+                                    (abs_df["نوع الغياب"] == "سنوي") &
+                                    (pd.to_datetime(abs_df["التاريخ"], errors='coerce').dt.month == current_month) &
+                                    (pd.to_datetime(abs_df["التاريخ"], errors='coerce').dt.year == current_year)
+                                )
+                                month_annual_days = pd.to_numeric(abs_df.loc[mask, "عدد الأيام"], errors='coerce').sum()
+                                emp_row2 = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
+                                total_balance2 = pd.to_numeric(emp_row2[emp_row2["الموظف"] == emp].iloc[0]["الرصيد السنوي"], errors='coerce') or 21
+                                threshold = total_balance2 / 3
+                                if month_annual_days > threshold:
+                                    warning_key = f"{emp}_{current_month}_{current_year}"
+                                    dismissed = st.session_state.get("dismissed_warnings", [])
+                                    if warning_key not in dismissed:
+                                        st.warning(f"⚠️ {emp} أخذ {month_annual_days} يوم سنوي هذا الشهر، وهو أكثر من ثلث الرصيد ({threshold:.1f} يوم)")
+                                        if st.button("إخفاء هذا التحذير", key=f"dismiss_{emp}_{date}"):
+                                            st.session_state["dismissed_warnings"] = st.session_state.get("dismissed_warnings", [])
+                                            st.session_state["dismissed_warnings"].append(warning_key)
+                                            st.rerun()
+                            st.rerun()
 
     with tabs[2]:
         st.subheader("تسجيل بدل")
@@ -754,13 +808,16 @@ def manage_hr_data(sheets_edit):
                 notes = st.text_input("ملاحظات")
                 img = st.file_uploader("صورة", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
                 if st.form_submit_button("تسجيل"):
-                    img_url = None
-                    if img:
-                        img_url = upload_image_to_github(img, "allowance", str(uuid.uuid4())[:8])
-                    sheets_edit = add_allowance_record(sheets_edit, emp, dept, date, allow_type, amount, notes, img_url)
-                    if save_and_push_to_github(sheets_edit, f"تسجيل بدل {emp}"):
-                        st.success("تم تسجيل البدل")
-                        st.rerun()
+                    if not emp:
+                        st.error("يرجى اختيار الموظف")
+                    else:
+                        img_url = None
+                        if img:
+                            img_url = upload_image_to_github(img, "allowance", str(uuid.uuid4())[:8])
+                        sheets_edit = add_allowance_record(sheets_edit, emp, dept, date, allow_type, amount, notes, img_url)
+                        if save_and_push_to_github(sheets_edit, f"تسجيل بدل {emp}"):
+                            st.success("تم تسجيل البدل")
+                            st.rerun()
 
     with tabs[3]:
         st.subheader("تسجيل حضور وانصراف")
@@ -774,7 +831,6 @@ def manage_hr_data(sheets_edit):
                 date = st.date_input("التاريخ", value=datetime.now())
                 time_in = st.time_input("وقت الحضور", value=datetime.strptime("08:00", "%H:%M").time())
                 time_out = st.time_input("وقت الانصراف", value=datetime.strptime("16:00", "%H:%M").time())
-                # حساب عدد الساعات
                 if time_in and time_out:
                     delta = datetime.combine(date, time_out) - datetime.combine(date, time_in)
                     hours = round(delta.total_seconds() / 3600, 2)
@@ -784,20 +840,24 @@ def manage_hr_data(sheets_edit):
                 notes = st.text_input("ملاحظات")
                 img = st.file_uploader("صورة (مثلاً بصمة)", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
                 if st.form_submit_button("تسجيل"):
-                    img_url = None
-                    if img:
-                        img_url = upload_image_to_github(img, "attendance", str(uuid.uuid4())[:8])
-                    sheets_edit = add_attendance_record(sheets_edit, emp, dept, date, str(time_in), str(time_out), hours, notes, img_url)
-                    if save_and_push_to_github(sheets_edit, f"تسجيل حضور {emp}"):
-                        st.success("تم تسجيل الحضور")
-                        st.rerun()
+                    if not emp:
+                        st.error("يرجى اختيار الموظف")
+                    else:
+                        img_url = None
+                        if img:
+                            img_url = upload_image_to_github(img, "attendance", str(uuid.uuid4())[:8])
+                        sheets_edit = add_attendance_record(sheets_edit, emp, dept, date, str(time_in), str(time_out), hours, notes, img_url)
+                        if save_and_push_to_github(sheets_edit, f"تسجيل حضور {emp}"):
+                            st.success("تم تسجيل الحضور")
+                            st.rerun()
 
     with tabs[4]:
         st.subheader("عرض وتحرير السجلات")
-        sheet_choice = st.selectbox("اختر نوع السجلات", [APP_CONFIG["EMPLOYEES_SHEET"], APP_CONFIG["ABSENCES_SHEET"], APP_CONFIG["ALLOWANCES_SHEET"], APP_CONFIG["ATTENDANCE_SHEET"]])
+        sheet_choice = st.selectbox("اختر نوع السجلات",
+                                    [APP_CONFIG["EMPLOYEES_SHEET"], APP_CONFIG["ABSENCES_SHEET"],
+                                     APP_CONFIG["ALLOWANCES_SHEET"], APP_CONFIG["ATTENDANCE_SHEET"]])
         df = sheets_edit[sheet_choice]
         st.dataframe(df, use_container_width=True)
-        # تحرير مباشر
         with st.expander("✏️ تعديل مباشر"):
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True, key=f"editor_{sheet_choice}")
             if st.button("💾 حفظ التعديلات", key=f"save_{sheet_choice}"):
@@ -805,15 +865,14 @@ def manage_hr_data(sheets_edit):
                 if save_and_push_to_github(sheets_edit, f"تعديل في {sheet_choice}"):
                     st.success("تم الحفظ")
                     st.rerun()
-        # تصدير
-        st.download_button("📥 تحميل هذه البيانات", export_sheet_to_excel({sheet_choice: df}, sheet_choice), file_name=f"{sheet_choice}.xlsx")
+        st.download_button("📥 تحميل هذه البيانات", export_filtered_results_to_excel(df, sheet_choice),
+                           file_name=f"{sheet_choice}.xlsx")
 
     return sheets_edit
 
 # ------------------------------- الإشعارات HR -------------------------------
 def show_hr_notifications(all_sheets):
     st.header("🔔 الإشعارات")
-    # عرض آخر النشاطات للمدير
     if st.session_state.get("username") == "admin":
         st.subheader("📋 آخر النشاطات")
         activity_log = load_activity_log()
@@ -825,14 +884,12 @@ def show_hr_notifications(all_sheets):
             st.info("لا توجد نشاطات")
         st.markdown("---")
 
-    # تنبيهات غياب مفرط
     st.subheader("⚠️ تنبيهات الغياب")
     absences_df = all_sheets[APP_CONFIG["ABSENCES_SHEET"]]
     if not absences_df.empty:
         absences_df["عدد الأيام"] = pd.to_numeric(absences_df["عدد الأيام"], errors='coerce').fillna(0)
-        # احتساب مجموع الغياب لكل موظف
         total_abs = absences_df.groupby("الموظف")["عدد الأيام"].sum()
-        excessive = total_abs[total_abs > 10]  # حد مثلاً 10 أيام
+        excessive = total_abs[total_abs > 10]
         if not excessive.empty:
             for emp, days in excessive.items():
                 st.warning(f"⚠️ **{emp}** تجاوز عدد أيام الغياب ({days} يوم)")
@@ -841,7 +898,6 @@ def show_hr_notifications(all_sheets):
     else:
         st.info("لا توجد بيانات غياب")
 
-    # ملخص سريع للبدلات هذا الشهر
     st.subheader("💰 إجمالي البدلات هذا الشهر")
     allow_df = all_sheets[APP_CONFIG["ALLOWANCES_SHEET"]]
     if not allow_df.empty:
@@ -875,6 +931,18 @@ with st.sidebar:
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
 
+def fetch_from_github_requests():
+    try:
+        response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
+        response.raise_for_status()
+        with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
+            shutil.copyfileobj(response.raw, f)
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"فشل التحديث: {e}")
+        return False
+
 # ------------------------------- تحميل البيانات الرئيسية -------------------------------
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
@@ -883,7 +951,6 @@ user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions)
 
-# بناء التبويبات
 tabs_list = ["🔍 بحث متقدم", "📊 تحليل البيانات", "🔔 الإشعارات"]
 if can_edit:
     tabs_list.append("🛠 إدارة البيانات")
@@ -941,16 +1008,3 @@ with tabs[-1]:
                 save_support_config(new_config)
                 st.success("تم التحديث")
                 st.rerun()
-
-# دالة fetch_from_github_requests (موجودة سابقاً ومعدلة للملف الجديد)
-def fetch_from_github_requests():
-    try:
-        response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
-        response.raise_for_status()
-        with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
-            shutil.copyfileobj(response.raw, f)
-        st.cache_data.clear()
-        return True
-    except Exception as e:
-        st.error(f"فشل التحديث: {e}")
-        return False
