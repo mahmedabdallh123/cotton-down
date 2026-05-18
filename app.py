@@ -16,10 +16,10 @@ from github import Github, GithubException
 APP_CONFIG = {
     "APP_TITLE": "HR System - متابعة الغيابات والبدلات",
     "APP_ICON": "👥",
-    "REPO_NAME": "mahmedabdallh123/stations",
+    "REPO_NAME": "mahmedabdallh123/cotton-down",
     "BRANCH": "main",
-    "FILE_PATH": "hr_data.xlsx",
-    "LOCAL_FILE": "hr_data.xlsx",
+    "FILE_PATH": "l9.xlsx",
+    "LOCAL_FILE": "l9.xlsx",
     "MAX_ACTIVE_USERS": 5,
     "SESSION_DURATION_MINUTES": 60,
     "IMAGES_FOLDER": "hr_images",
@@ -60,8 +60,8 @@ MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 SUPPORT_CONFIG_FILE = "support_config.json"
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/stations/refs/heads/main/users.json"
-GITHUB_REPO_USERS = "mahmedabdallh123/stations"
+GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/cotton-down/refs/heads/main/users.json"
+GITHUB_REPO_USERS = "mahmedabdallh123/cotton-down"
 GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
@@ -650,6 +650,15 @@ def manage_hr_data(sheets_edit):
     with tabs[0]:
         st.subheader("قائمة الموظفين")
         emp_df = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]].copy()
+
+        # ✅ تأكد من وجود جميع الأعمدة المطلوبة (لتفادي KeyError مع الملفات القديمة)
+        for col in APP_CONFIG["EMPLOYEES_COLUMNS"]:
+            if col not in emp_df.columns:
+                emp_df[col] = ""  # أو 0 للأعمدة الرقمية
+                if col == "الرصيد السنوي":
+                    emp_df[col] = 21  # قيمة افتراضية 21 يوم
+        sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]] = emp_df
+
         # عرض الرصيد المتبقي
         if not emp_df.empty:
             absences_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
@@ -662,13 +671,15 @@ def manage_hr_data(sheets_edit):
                     used_days = pd.Series(dtype=float)
             else:
                 used_days = pd.Series(dtype=float)
+
             emp_df["الرصيد المستنفد"] = emp_df["الموظف"].map(used_days).fillna(0)
             emp_df["الرصيد المتبقي"] = pd.to_numeric(emp_df["الرصيد السنوي"], errors='coerce').fillna(0) - emp_df["الرصيد المستنفد"]
-            # عرض ملخص
+
             st.dataframe(emp_df[["الموظف", "القسم", "الوظيفة", "الرصيد المتبقي", "الرصيد المستنفد"]], use_container_width=True)
         else:
             st.info("لا يوجد موظفون بعد")
 
+        # استمارة إضافة موظف جديد
         with st.expander("➕ إضافة موظف جديد"):
             with st.form("add_employee_form"):
                 c1, c2 = st.columns(2)
@@ -700,6 +711,8 @@ def manage_hr_data(sheets_edit):
                         if save_and_push_to_github(sheets_edit, f"إضافة موظف {name}"):
                             st.success("تمت الإضافة")
                             st.rerun()
+
+        # حذف موظف
         if not emp_df.empty:
             if st.button("🗑️ حذف موظف محدد"):
                 st.session_state["delete_emp"] = True
@@ -712,6 +725,7 @@ def manage_hr_data(sheets_edit):
                         st.session_state["delete_emp"] = False
                         st.rerun()
 
+    # باقي التبويبات كما هي (غياب، بدلات، حضور، عرض/تحرير) دون تغيير...
     with tabs[1]:
         st.subheader("تسجيل غياب")
         employees = get_employees_list(sheets_edit)
@@ -734,7 +748,6 @@ def manage_hr_data(sheets_edit):
                 notes = st.text_input("ملاحظات إضافية")
                 img = st.file_uploader("صورة (إجازة مرضية مثلاً)", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
 
-                # التحقق من الرصيد السنوي
                 abort_submit = False
                 if absence_type == "سنوي" and days > 0:
                     emp_data = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
@@ -766,12 +779,10 @@ def manage_hr_data(sheets_edit):
                         sheets_edit = add_absence_record(sheets_edit, emp, dept, date, absence_type, days, reason, documented, notes, img_url)
                         if save_and_push_to_github(sheets_edit, f"تسجيل غياب {emp}"):
                             st.success("تم تسجيل الغياب")
-                            # إنذار عند تجاوز ثلث الرصيد السنوي في الشهر
                             if absence_type == "سنوي":
                                 current_month = date.month
                                 current_year = date.year
                                 abs_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
-                                # إعادة حساب أيام السنوي لهذا الشهر
                                 mask = (
                                     (abs_df["الموظف"] == emp) &
                                     (abs_df["نوع الغياب"] == "سنوي") &
