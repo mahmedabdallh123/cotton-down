@@ -919,6 +919,19 @@ def show_hr_notifications(all_sheets):
     else:
         st.info("لا توجد بدلات مسجلة")
 
+# ------------------------------- دالة التحديث من GitHub -------------------------------
+def fetch_from_github_requests():
+    try:
+        response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
+        response.raise_for_status()
+        with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
+            shutil.copyfileobj(response.raw, f)
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"فشل التحديث: {e}")
+        return False
+
 # ------------------------------- الواجهة الرئيسية -------------------------------
 with st.sidebar:
     st.header("الجلسة")
@@ -941,18 +954,6 @@ with st.sidebar:
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-
-def fetch_from_github_requests():
-    try:
-        response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
-        response.raise_for_status()
-        with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
-            shutil.copyfileobj(response.raw, f)
-        st.cache_data.clear()
-        return True
-    except Exception as e:
-        st.error(f"فشل التحديث: {e}")
-        return False
 
 # ------------------------------- تحميل البيانات الرئيسية -------------------------------
 all_sheets = load_all_sheets()
