@@ -14,15 +14,9 @@ from github import Github, GithubException
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
-<<<<<<< HEAD
-    "APP_TITLE": "بيل يارن1- CMMS",
-    "APP_ICON": "🏭",
-    "REPO_NAME": "mahmedabdallh123/stations",
-=======
     "APP_TITLE": "HR System - متابعة الغيابات والبدلات",
     "APP_ICON": "👥",
     "REPO_NAME": "mahmedabdallh123/cotton-down",
->>>>>>> b12677852344750821c9e3c90a4d20723e979203
     "BRANCH": "main",
     "FILE_PATH": "l9.xlsx",
     "LOCAL_FILE": "l9.xlsx",
@@ -66,13 +60,8 @@ MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 SUPPORT_CONFIG_FILE = "support_config.json"
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-<<<<<<< HEAD
-GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/stations/refs/heads/main/users.json"
-GITHUB_REPO_USERS = "mahmedabdallh123/stations"
-=======
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/cotton-down/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/cotton-down"
->>>>>>> b12677852344750821c9e3c90a4d20723e979203
 GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
