@@ -81,7 +81,7 @@ def upload_image_to_github(image_file, entity_type, entity_id, custom_filename=N
         if custom_filename:
             filename = custom_filename
         else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             filename = f"{entity_type}_{entity_id}_{timestamp}.jpg"
         repo_path = f"{IMAGES_FOLDER}/{entity_type}/{filename}"
         g = Github(GITHUB_TOKEN)
@@ -189,7 +189,7 @@ def create_empty_hr_sheets():
     sheets[APP_CONFIG["ATTENDANCE_SHEET"]] = pd.DataFrame(columns=APP_CONFIG["ATTENDANCE_COLUMNS"])
     return sheets
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60)
 def load_all_sheets():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         empty_sheets = create_empty_hr_sheets()
@@ -216,7 +216,7 @@ def load_all_sheets():
         st.error(f"خطأ في تحميل ملف البيانات: {e}")
         return create_empty_hr_sheets()
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60)
 def load_sheets_for_edit():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return create_empty_hr_sheets()
@@ -651,7 +651,7 @@ def manage_hr_data(sheets_edit):
         st.subheader("قائمة الموظفين")
         emp_df = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]].copy()
 
-        # ✅ تأكد من وجود جميع الأعمدة المطلوبة (لتفادي KeyError مع الملفات القديمة)
+        # تأكد من وجود جميع الأعمدة المطلوبة (لتفادي KeyError مع الملفات القديمة)
         for col in APP_CONFIG["EMPLOYEES_COLUMNS"]:
             if col not in emp_df.columns:
                 emp_df[col] = ""  # أو 0 للأعمدة الرقمية
@@ -663,7 +663,8 @@ def manage_hr_data(sheets_edit):
         if not emp_df.empty:
             absences_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
             if not absences_df.empty:
-                annual_absences = absences_df[absences_df["نوع الغياب"] == "سنوي"].copy()
+                # حساب الإجازات السنوية المستهلكة (كلا النوعين: "إجازة سنوية" و "سنوي" للتوافق)
+                annual_absences = absences_df[absences_df["نوع الغياب"].isin(["إجازة سنوية", "سنوي"])].copy()
                 if not annual_absences.empty:
                     annual_absences["عدد الأيام"] = pd.to_numeric(annual_absences["عدد الأيام"], errors='coerce').fillna(0)
                     used_days = annual_absences.groupby("الموظف")["عدد الأيام"].sum()
@@ -725,7 +726,6 @@ def manage_hr_data(sheets_edit):
                         st.session_state["delete_emp"] = False
                         st.rerun()
 
-    # باقي التبويبات كما هي (غياب، بدلات، حضور، عرض/تحرير) دون تغيير...
     with tabs[1]:
         st.subheader("تسجيل غياب")
         employees = get_employees_list(sheets_edit)
@@ -736,12 +736,25 @@ def manage_hr_data(sheets_edit):
                 emp = st.selectbox("الموظف", employees)
                 dept = st.selectbox("القسم", get_departments(sheets_edit))
                 date = st.date_input("التاريخ", value=datetime.now())
+                
+                # ========== التعديل هنا: قائمة أنواع الغياب الموسعة ==========
                 absence_type = st.selectbox(
                     "نوع الغياب",
-                    ["خصم أجر اليوم", "اعتذار عن تكليف إضافي", "مرضي", "سنوي", "تعويض بيوم إجازة رسمية", "غياب عادي", "آخر"]
+                    [
+                        "إجازة سنوية",
+                        "عارضة",
+                        "خصم أجر اليوم",
+                        "مرضي",
+                        "تعويض بيوم إجازة رسمية",
+                        "بدل عن إجازة رسمية من دولة",
+                        "اعتذار عن تكليف إضافي",
+                        "غياب عادي",
+                        "آخر"
+                    ]
                 )
                 if absence_type == "آخر":
                     absence_type = st.text_input("حدد نوع الغياب")
+                
                 days = st.number_input("عدد الأيام", min_value=0.5, step=0.5)
                 reason = st.text_area("سبب الغياب")
                 documented = st.checkbox("موثق؟")
@@ -749,14 +762,15 @@ def manage_hr_data(sheets_edit):
                 img = st.file_uploader("صورة (إجازة مرضية مثلاً)", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
 
                 abort_submit = False
-                if absence_type == "سنوي" and days > 0:
+                # التحقق من الرصيد السنوي للأنواع التي تستهلك رصيد (إجازة سنوية أو سنوي للتوافق)
+                if absence_type in ["إجازة سنوية", "سنوي"] and days > 0:
                     emp_data = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
                     emp_row = emp_data[emp_data["الموظف"] == emp]
                     if not emp_row.empty:
                         total_balance = pd.to_numeric(emp_row.iloc[0]["الرصيد السنوي"], errors='coerce') or 0
                         abs_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
                         if not abs_df.empty:
-                            prev_annual = abs_df[(abs_df["الموظف"] == emp) & (abs_df["نوع الغياب"] == "سنوي")]["عدد الأيام"]
+                            prev_annual = abs_df[(abs_df["الموظف"] == emp) & (abs_df["نوع الغياب"].isin(["إجازة سنوية", "سنوي"]))]["عدد الأيام"]
                             prev_annual = pd.to_numeric(prev_annual, errors='coerce').fillna(0).sum()
                         else:
                             prev_annual = 0
@@ -766,6 +780,14 @@ def manage_hr_data(sheets_edit):
                             abort_submit = True
                         else:
                             st.info(f"الرصيد المتبقي بعد التسجيل: {remaining - days} يوم")
+
+                # إضافة تذكير للأنواع الخاصة
+                if absence_type == "عارضة":
+                    st.info("⭐ ملاحظة: الإجازة العارضة لا تُخصم من الرصيد السنوي")
+                elif absence_type == "تعويض بيوم إجازة رسمية":
+                    st.info("📅 هذا النوع يُستخدم كتعويض عن العمل في يوم إجازة رسمية")
+                elif absence_type == "بدل عن إجازة رسمية من دولة":
+                    st.info("🌍 إجازة رسمية خاصة بجنسية الموظف (غير المصرية)")
 
                 if st.form_submit_button("تسجيل"):
                     if abort_submit:
@@ -779,13 +801,14 @@ def manage_hr_data(sheets_edit):
                         sheets_edit = add_absence_record(sheets_edit, emp, dept, date, absence_type, days, reason, documented, notes, img_url)
                         if save_and_push_to_github(sheets_edit, f"تسجيل غياب {emp}"):
                             st.success("تم تسجيل الغياب")
-                            if absence_type == "سنوي":
+                            # تنبيه إذا كان النوع سنوي وتجاوز ثلث الرصيد في الشهر
+                            if absence_type in ["إجازة سنوية", "سنوي"]:
                                 current_month = date.month
                                 current_year = date.year
                                 abs_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
                                 mask = (
                                     (abs_df["الموظف"] == emp) &
-                                    (abs_df["نوع الغياب"] == "سنوي") &
+                                    (abs_df["نوع الغياب"].isin(["إجازة سنوية", "سنوي"])) &
                                     (pd.to_datetime(abs_df["التاريخ"], errors='coerce').dt.month == current_month) &
                                     (pd.to_datetime(abs_df["التاريخ"], errors='coerce').dt.year == current_year)
                                 )
@@ -797,7 +820,7 @@ def manage_hr_data(sheets_edit):
                                     warning_key = f"{emp}_{current_month}_{current_year}"
                                     dismissed = st.session_state.get("dismissed_warnings", [])
                                     if warning_key not in dismissed:
-                                        st.warning(f"⚠️ {emp} أخذ {month_annual_days} يوم سنوي هذا الشهر، وهو أكثر من ثلث الرصيد ({threshold:.1f} يوم)")
+                                        st.warning(f"⚠️ {emp} أخذ {month_annual_days} يوم إجازة سنوية هذا الشهر، وهو أكثر من ثلث الرصيد ({threshold:.1f} يوم)")
                                         if st.button("إخفاء هذا التحذير", key=f"dismiss_{emp}_{date}"):
                                             st.session_state["dismissed_warnings"] = st.session_state.get("dismissed_warnings", [])
                                             st.session_state["dismissed_warnings"].append(warning_key)
