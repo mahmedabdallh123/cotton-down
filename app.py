@@ -37,8 +37,13 @@ APP_CONFIG = {
         "الموظف", "القسم", "التاريخ", "نوع الغياب", "عدد الأيام",
         "سبب الغياب", "موثق", "ملاحظات", "رابط الصورة"
     ],
-    "ALLOWANCES_COLUMNS": ["الموظف", "القسم", "التاريخ", "نوع البدل", "المبلغ", "ملاحظات", "رابط الصورة"],
-    "ATTENDANCE_COLUMNS": ["الموظف", "القسم", "التاريخ", "وقت الحضور", "وقت الانصراف", "عدد ساعات العمل", "ملاحظات", "رابط الصورة"],
+    "ALLOWANCES_COLUMNS": [
+        "الموظف", "القسم", "التاريخ", "نوع البدل", "المبلغ", "ملاحظات", "رابط الصورة",
+        "التاريخ البديل", "الموظف المرتبط", "نوع التعويض"
+    ],
+    "ATTENDANCE_COLUMNS": [
+        "الموظف", "القسم", "التاريخ", "وقت الحضور", "وقت الانصراف", "عدد ساعات العمل", "ملاحظات", "رابط الصورة"
+    ],
 }
 
 # ------------------------------- إعداد الصفحة -------------------------------
@@ -210,6 +215,11 @@ def load_all_sheets():
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
             df = df.fillna('')
+            # التأكد من وجود الأعمدة الجديدة في البدلات
+            if name == APP_CONFIG["ALLOWANCES_SHEET"]:
+                for col in APP_CONFIG["ALLOWANCES_COLUMNS"]:
+                    if col not in df.columns:
+                        df[col] = ""
             sheets[name] = df
         return sheets
     except Exception as e:
@@ -233,6 +243,10 @@ def load_sheets_for_edit():
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
             df = df.fillna('')
+            if name == APP_CONFIG["ALLOWANCES_SHEET"]:
+                for col in APP_CONFIG["ALLOWANCES_COLUMNS"]:
+                    if col not in df.columns:
+                        df[col] = ""
             sheets[name] = df
         return sheets
     except Exception as e:
@@ -471,7 +485,7 @@ def add_absence_record(sheets_edit, employee, department, date, absence_type, da
     sheets_edit[APP_CONFIG["ABSENCES_SHEET"]] = pd.concat([df, new_row], ignore_index=True)
     return sheets_edit
 
-def add_allowance_record(sheets_edit, employee, department, date, allowance_type, amount, notes, image_url):
+def add_allowance_record(sheets_edit, employee, department, date, allowance_type, amount, notes, image_url, alternate_date=None, related_employee=None, compensation_type=None):
     df = sheets_edit[APP_CONFIG["ALLOWANCES_SHEET"]]
     new_row = pd.DataFrame([{
         "الموظف": employee,
@@ -480,7 +494,10 @@ def add_allowance_record(sheets_edit, employee, department, date, allowance_type
         "نوع البدل": allowance_type,
         "المبلغ": amount,
         "ملاحظات": notes,
-        "رابط الصورة": image_url or ""
+        "رابط الصورة": image_url or "",
+        "التاريخ البديل": alternate_date.strftime("%Y-%m-%d") if isinstance(alternate_date, datetime) else (alternate_date if alternate_date else ""),
+        "الموظف المرتبط": related_employee or "",
+        "نوع التعويض": compensation_type or ""
     }])
     sheets_edit[APP_CONFIG["ALLOWANCES_SHEET"]] = pd.concat([df, new_row], ignore_index=True)
     return sheets_edit
@@ -543,6 +560,21 @@ def analyze_hr_data(all_sheets):
         df["الشهر"] = df["التاريخ"].dt.to_period("M")
         monthly_allow = df.groupby("الشهر")["المبلغ"].sum()
         st.line_chart(monthly_allow.astype(float))
+        
+        # عرض تبديلات الورديات
+        st.subheader("🔄 تبديلات الورديات المسجلة")
+        swaps = df[df["نوع البدل"] == "تبديل وردية مع موظف"]
+        if not swaps.empty:
+            st.dataframe(swaps[["الموظف", "الموظف المرتبط", "التاريخ", "التاريخ البديل", "ملاحظات"]], use_container_width=True)
+        else:
+            st.info("لا توجد تبديلات ورديات مسجلة")
+        
+        st.subheader("📅 التعويضات عن أيام الإجازات الرسمية")
+        compensations = df[df["نوع البدل"] == "تعويض عن يوم إجازة رسمية (بدل يوم عمل بيوم إجازة)"]
+        if not compensations.empty:
+            st.dataframe(compensations[["الموظف", "التاريخ", "التاريخ البديل", "نوع التعويض", "ملاحظات"]], use_container_width=True)
+        else:
+            st.info("لا توجد تعويضات مسجلة")
     else:
         df = all_sheets[APP_CONFIG["ATTENDANCE_SHEET"]]
         if df.empty:
@@ -651,19 +683,18 @@ def manage_hr_data(sheets_edit):
         st.subheader("قائمة الموظفين")
         emp_df = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]].copy()
 
-        # تأكد من وجود جميع الأعمدة المطلوبة (لتفادي KeyError مع الملفات القديمة)
+        # تأكد من وجود جميع الأعمدة المطلوبة
         for col in APP_CONFIG["EMPLOYEES_COLUMNS"]:
             if col not in emp_df.columns:
-                emp_df[col] = ""  # أو 0 للأعمدة الرقمية
+                emp_df[col] = ""
                 if col == "الرصيد السنوي":
-                    emp_df[col] = 21  # قيمة افتراضية 21 يوم
+                    emp_df[col] = 21
         sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]] = emp_df
 
         # عرض الرصيد المتبقي
         if not emp_df.empty:
             absences_df = sheets_edit[APP_CONFIG["ABSENCES_SHEET"]]
             if not absences_df.empty:
-                # حساب الإجازات السنوية المستهلكة (كلا النوعين: "إجازة سنوية" و "سنوي" للتوافق)
                 annual_absences = absences_df[absences_df["نوع الغياب"].isin(["إجازة سنوية", "سنوي"])].copy()
                 if not annual_absences.empty:
                     annual_absences["عدد الأيام"] = pd.to_numeric(annual_absences["عدد الأيام"], errors='coerce').fillna(0)
@@ -737,7 +768,6 @@ def manage_hr_data(sheets_edit):
                 dept = st.selectbox("القسم", get_departments(sheets_edit))
                 date = st.date_input("التاريخ", value=datetime.now())
                 
-                # ========== التعديل هنا: قائمة أنواع الغياب الموسعة ==========
                 absence_type = st.selectbox(
                     "نوع الغياب",
                     [
@@ -762,7 +792,6 @@ def manage_hr_data(sheets_edit):
                 img = st.file_uploader("صورة (إجازة مرضية مثلاً)", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
 
                 abort_submit = False
-                # التحقق من الرصيد السنوي للأنواع التي تستهلك رصيد (إجازة سنوية أو سنوي للتوافق)
                 if absence_type in ["إجازة سنوية", "سنوي"] and days > 0:
                     emp_data = sheets_edit[APP_CONFIG["EMPLOYEES_SHEET"]]
                     emp_row = emp_data[emp_data["الموظف"] == emp]
@@ -781,7 +810,6 @@ def manage_hr_data(sheets_edit):
                         else:
                             st.info(f"الرصيد المتبقي بعد التسجيل: {remaining - days} يوم")
 
-                # إضافة تذكير للأنواع الخاصة
                 if absence_type == "عارضة":
                     st.info("⭐ ملاحظة: الإجازة العارضة لا تُخصم من الرصيد السنوي")
                 elif absence_type == "تعويض بيوم إجازة رسمية":
@@ -801,7 +829,6 @@ def manage_hr_data(sheets_edit):
                         sheets_edit = add_absence_record(sheets_edit, emp, dept, date, absence_type, days, reason, documented, notes, img_url)
                         if save_and_push_to_github(sheets_edit, f"تسجيل غياب {emp}"):
                             st.success("تم تسجيل الغياب")
-                            # تنبيه إذا كان النوع سنوي وتجاوز ثلث الرصيد في الشهر
                             if absence_type in ["إجازة سنوية", "سنوي"]:
                                 current_month = date.month
                                 current_year = date.year
@@ -828,7 +855,7 @@ def manage_hr_data(sheets_edit):
                             st.rerun()
 
     with tabs[2]:
-        st.subheader("تسجيل بدل")
+        st.subheader("تسجيل بدل / تعويض / تبادل ورديات")
         employees = get_employees_list(sheets_edit)
         if not employees:
             st.warning("يجب إضافة موظفين أولاً")
@@ -837,20 +864,85 @@ def manage_hr_data(sheets_edit):
                 emp = st.selectbox("الموظف", employees)
                 dept = st.selectbox("القسم", get_departments(sheets_edit))
                 date = st.date_input("التاريخ", value=datetime.now())
-                allow_type = st.selectbox("نوع البدل", ["نقل", "سكن", "إضافي", "بدل طبيعة عمل", "آخر"])
-                amount = st.number_input("المبلغ", min_value=0.0, step=100.0)
-                notes = st.text_input("ملاحظات")
-                img = st.file_uploader("صورة", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
+                
+                allow_type = st.selectbox(
+                    "نوع البدل",
+                    ["نقل", "سكن", "إضافي", "بدل طبيعة عمل",
+                     "تعويض عن يوم إجازة رسمية (بدل يوم عمل بيوم إجازة)",
+                     "تبديل وردية مع موظف", "آخر"]
+                )
+                
+                amount = 0.0
+                alternate_date = None
+                related_employee = None
+                compensation_type = ""
+                notes = ""
+                
+                if allow_type == "تعويض عن يوم إجازة رسمية (بدل يوم عمل بيوم إجازة)":
+                    st.info("📌 مثال: عملت يوم السبت (عيد رسمي) وستأخذ بدله يوم الاثنين")
+                    alternate_date = st.date_input("التاريخ الأصلي للإجازة الرسمية (اليوم الذي عملت فيه)", value=datetime.now())
+                    compensation_type = st.selectbox("نوع التعويض", ["بدل يوم عمل بيوم إجازة", "بدل مالي"])
+                    if compensation_type == "بدل مالي":
+                        amount = st.number_input("المبلغ (إن وجد)", min_value=0.0, step=50.0, value=0.0)
+                    else:
+                        amount = 0.0
+                        st.write("✅ سيتم تعويضه بيوم بدل (لا يوجد مبلغ)")
+                    notes = st.text_area("ملاحظات إضافية (مثل: تم الاتفاق مع الإدارة)")
+                
+                elif allow_type == "تبديل وردية مع موظف":
+                    st.info("🔄 مثال: الموظف أخذ وردية الموظف ب والعكس في يوم محدد")
+                    other_emps = [e for e in employees if e != emp]
+                    if not other_emps:
+                        st.error("لا يوجد موظف آخر للتبديل")
+                    else:
+                        related_employee = st.selectbox("الموظف الآخر", other_emps)
+                        alternate_date = st.date_input("تاريخ التبادل", value=datetime.now())
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            shift_emp = st.text_input(f"الوردية التي أداها {emp} (مثل: أولى)", placeholder="أولى / ثانية / ثالثة")
+                        with col2:
+                            shift_other = st.text_input(f"الوردية التي أداها {related_employee}", placeholder="أولى / ثانية / ثالثة")
+                        compensation_type = f"تبادل ورديات: {emp} أدى {shift_emp} بدلاً من {shift_other}"
+                        notes = st.text_area("ملاحظات إضافية", value=f"الموظفان تبادلا الوردية في تاريخ {alternate_date.strftime('%Y-%m-%d')}")
+                        amount = 0.0
+                
+                elif allow_type == "آخر":
+                    allow_type_custom = st.text_input("حدد نوع البدل")
+                    if allow_type_custom:
+                        allow_type = allow_type_custom
+                    amount = st.number_input("المبلغ", min_value=0.0, step=100.0)
+                    notes = st.text_input("ملاحظات")
+                else:
+                    amount = st.number_input("المبلغ", min_value=0.0, step=100.0)
+                    notes = st.text_input("ملاحظات")
+                
+                img = st.file_uploader("صورة (مستند إثبات)", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
+                
                 if st.form_submit_button("تسجيل"):
                     if not emp:
                         st.error("يرجى اختيار الموظف")
+                    elif allow_type == "تبديل وردية مع موظف" and not related_employee:
+                        st.error("يرجى اختيار الموظف الآخر للتبديل")
                     else:
                         img_url = None
                         if img:
                             img_url = upload_image_to_github(img, "allowance", str(uuid.uuid4())[:8])
-                        sheets_edit = add_allowance_record(sheets_edit, emp, dept, date, allow_type, amount, notes, img_url)
-                        if save_and_push_to_github(sheets_edit, f"تسجيل بدل {emp}"):
-                            st.success("تم تسجيل البدل")
+                        
+                        sheets_edit = add_allowance_record(
+                            sheets_edit, emp, dept, date, allow_type, amount, notes, img_url,
+                            alternate_date=alternate_date, related_employee=related_employee, compensation_type=compensation_type
+                        )
+                        
+                        if allow_type == "تبديل وردية مع موظف" and related_employee:
+                            notes_other = f"تبادل وردية مع {emp} - {compensation_type}"
+                            sheets_edit = add_allowance_record(
+                                sheets_edit, related_employee, dept, date, allow_type, 0.0, notes_other, img_url,
+                                alternate_date=alternate_date, related_employee=emp, compensation_type=compensation_type
+                            )
+                            st.info(f"تم تسجيل التبادل لكلا الموظفين: {emp} و {related_employee}")
+                        
+                        if save_and_push_to_github(sheets_edit, f"تسجيل بدل/تبادل {emp}"):
+                            st.success("تم التسجيل بنجاح")
                             st.rerun()
 
     with tabs[3]:
