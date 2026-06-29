@@ -14,7 +14,7 @@ from github import Github, GithubException
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
-    "APP_TITLE": "cotton-down  - CMMS",
+    "APP_TITLE": "Cotton-Town  - CMMS",
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/cotton-down",
     "BRANCH": "main",
