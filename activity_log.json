@@ -1,11 +1,5 @@
 [
   {
-    "timestamp": "2026-04-30T17:51:40.943032",
-    "username": "مدير_صيانة",
-    "action_type": "add_maintenance_task",
-    "details": "تم إضافة بند صيانة 'تغير زيت جير بوكس حصيره مسننه تفتيح العوادم ' للماكينة BO-R (فترة 21900 ساعة)"
-  },
-  {
     "timestamp": "2026-04-30T17:53:06.293096",
     "username": "مدير_صيانة",
     "action_type": "execute_maintenance",
@@ -598,5 +592,11 @@
     "username": "admin",
     "action_type": "delete_section",
     "details": "تم حذف القسم 'Sheet1' وقطع الغيار التابعة له"
+  },
+  {
+    "timestamp": "2026-07-25T18:26:57.283792",
+    "username": "admin",
+    "action_type": "add_maintenance_task",
+    "details": "تم إضافة بند صيانة 'تشجيم(EP2=20جم)' للماكينة تمشيط 1 (فترة 720 ساعة)"
   }
 ]
